@@ -1,0 +1,30 @@
+{
+  "name": "vulnerable-node-api",
+  "version": "1.0.0",
+  "description": "Sample Node.js API with intentional security vulnerabilities for SonarQube testing",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "lint": "eslint src/",
+    "test": "jest --coverage"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "mongoose": "^7.5.0",
+    "jsonwebtoken": "^9.0.1",
+    "cookie-parser": "^1.4.6",
+    "express-session": "^1.17.3",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.4",
+    "axios": "^1.5.0",
+    "xml2js": "^0.6.0",
+    "ejs": "^3.1.9"
+  },
+  "devDependencies": {
+    "eslint": "^8.48.0",
+    "jest": "^29.6.4",
+    "nodemon": "^3.0.1"
+  }
+}
