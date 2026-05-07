@@ -14,21 +14,24 @@ function generateToken(data) {
   return crypto.createHash('sha1').update(data + Date.now()).digest('hex');
 }
 
-// VULNERABILITY: S5547 - Using DES (weak cipher)
 function encryptData(plaintext) {
-  // DES is considered broken and should not be used
-  const cipher = crypto.createCipheriv('des-ecb', Buffer.from(ENCRYPTION_KEY.substring(0, 8)), null);
+  const key = Buffer.from(ENCRYPTION_KEY.substring(0, 32));
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   let encrypted = cipher.update(plaintext, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+  const authTag = cipher.getAuthTag().toString('hex');
+  return iv.toString('hex') + ':' + authTag + ':' + encrypted;
 }
 
-// VULNERABILITY: S5547 - Using RC4 (weak stream cipher)
 function encryptStream(data) {
-  const cipher = crypto.createCipheriv('rc4', Buffer.from(ENCRYPTION_KEY.substring(0, 16)), null);
+  const key = Buffer.from(ENCRYPTION_KEY.substring(0, 32));
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+  const authTag = cipher.getAuthTag().toString('hex');
+  return iv.toString('hex') + ':' + authTag + ':' + encrypted;
 }
 
 // VULNERABILITY: S2245 - Using Math.random() for security-sensitive token generation
@@ -48,10 +51,9 @@ function generateApiKey() {
          Math.random().toString(36).substring(2);
 }
 
-// VULNERABILITY: S4426 - Weak key size for encryption
 function generateWeakKey() {
   return crypto.generateKeyPairSync('rsa', {
-    modulusLength: 512,  // Way too small for RSA
+    modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });
