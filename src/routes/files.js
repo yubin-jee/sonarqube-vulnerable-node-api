@@ -10,15 +10,16 @@ const UPLOAD_DIR = path.join(__dirname, '../../uploads');
 router.get('/:filename', (req, res) => {
   const { filename } = req.params;
 
-  // VULNERABILITY: S4829 - Path traversal via unvalidated user input
-  const filePath = path.join(UPLOAD_DIR, filename);
+  const filePath = path.resolve(UPLOAD_DIR, filename);
 
-  // No validation that filePath is within UPLOAD_DIR
+  if (!filePath.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
+    return res.status(400).json({ error: 'Invalid file path' });
+  }
+
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
   }
 
-  // VULNERABILITY: S5145 - Log injection
   logger.info('File download requested: ' + filename);
 
   res.sendFile(filePath);
@@ -27,9 +28,14 @@ router.get('/:filename', (req, res) => {
 router.get('/read/:filepath(*)', (req, res) => {
   const requestedPath = req.params.filepath;
 
-  // VULNERABILITY: S4829 - Direct path traversal - reading arbitrary files
+  const resolvedPath = path.resolve(UPLOAD_DIR, requestedPath);
+
+  if (!resolvedPath.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
+    return res.status(400).json({ error: 'Invalid file path' });
+  }
+
   try {
-    const content = fs.readFileSync(requestedPath, 'utf8');
+    const content = fs.readFileSync(resolvedPath, 'utf8');
     res.json({ content });
   } catch (error) {
     res.status(404).json({ error: 'File not found' });
@@ -80,8 +86,11 @@ router.post('/search', (req, res) => {
 router.delete('/:filename', (req, res) => {
   const { filename } = req.params;
 
-  // VULNERABILITY: S4829 - Path traversal in delete operation
-  const filePath = UPLOAD_DIR + '/' + filename;
+  const filePath = path.resolve(UPLOAD_DIR, filename);
+
+  if (!filePath.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
+    return res.status(400).json({ error: 'Invalid file path' });
+  }
 
   // VULNERABILITY: S2076 - Command injection via filename in rm command
   exec(`rm -f "${filePath}"`, (error) => {
