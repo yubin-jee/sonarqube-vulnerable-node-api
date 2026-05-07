@@ -1,8 +1,7 @@
 const crypto = require('crypto');
 
-// VULNERABILITY: S6437 - Hard-coded encryption key
-const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6';
-const IV = 'abcdef1234567890';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6';
+const IV = process.env.ENCRYPTION_IV || 'abcdef1234567890';
 
 // VULNERABILITY: S5547 - Using MD5 for password hashing
 function hashPassword(password) {
