@@ -25,9 +25,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// VULNERABILITY: S2068 - Hard-coded session secret
 app.use(session({
-  secret: 'super-secret-session-key-12345',
+  secret: process.env.SESSION_SECRET || 'change-me-in-production',
   resave: false,
   saveUninitialized: true,
   cookie: { secure: false } // VULNERABILITY: S2092 - Insecure cookie
