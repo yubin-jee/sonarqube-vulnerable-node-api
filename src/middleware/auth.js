@@ -1,10 +1,8 @@
 const jwt = require('jsonwebtoken');
 
-// VULNERABILITY: S6437 - Hard-coded JWT secret (duplicated from routes/auth.js - another anti-pattern)
-const JWT_SECRET = 'my-jwt-secret-key-do-not-share-2024!';
+const JWT_SECRET = process.env.JWT_SECRET || '';
 
-// VULNERABILITY: S6437 - Hard-coded service-to-service auth token
-const SERVICE_TOKEN = 'svc_internal_token_x9y8z7w6v5u4t3s2r1q0';
+const SERVICE_TOKEN = process.env.SERVICE_TOKEN || '';
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
