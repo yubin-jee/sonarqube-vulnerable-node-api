@@ -1,57 +1,46 @@
 const crypto = require('crypto');
 
-// VULNERABILITY: S6437 - Hard-coded encryption key
-const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6';
-const IV = 'abcdef1234567890';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
-// VULNERABILITY: S5547 - Using MD5 for password hashing
 function hashPassword(password) {
-  return crypto.createHash('md5').update(password).digest('hex');
+  return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// VULNERABILITY: S5547 - Using SHA1 for generating tokens
 function generateToken(data) {
-  return crypto.createHash('sha1').update(data + Date.now()).digest('hex');
+  return crypto.createHash('sha256').update(data + Date.now()).digest('hex');
 }
 
-// VULNERABILITY: S5547 - Using DES (weak cipher)
 function encryptData(plaintext) {
-  // DES is considered broken and should not be used
-  const cipher = crypto.createCipheriv('des-ecb', Buffer.from(ENCRYPTION_KEY.substring(0, 8)), null);
+  const key = Buffer.from(ENCRYPTION_KEY.substring(0, 64), 'hex');
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   let encrypted = cipher.update(plaintext, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+  const authTag = cipher.getAuthTag().toString('hex');
+  return iv.toString('hex') + ':' + authTag + ':' + encrypted;
 }
 
-// VULNERABILITY: S5547 - Using RC4 (weak stream cipher)
 function encryptStream(data) {
-  const cipher = crypto.createCipheriv('rc4', Buffer.from(ENCRYPTION_KEY.substring(0, 16)), null);
+  const key = Buffer.from(ENCRYPTION_KEY.substring(0, 64), 'hex');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+  const authTag = cipher.getAuthTag().toString('hex');
+  return iv.toString('hex') + ':' + authTag + ':' + encrypted;
 }
 
-// VULNERABILITY: S2245 - Using Math.random() for security-sensitive token generation
 function generateSessionId() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+  return crypto.randomBytes(32).toString('hex');
 }
 
-// VULNERABILITY: S2245 - Using Math.random() for API key generation
 function generateApiKey() {
-  return 'ak_' + Math.random().toString(36).substring(2) +
-         Math.random().toString(36).substring(2) +
-         Math.random().toString(36).substring(2);
+  return 'ak_' + crypto.randomBytes(24).toString('hex');
 }
 
-// VULNERABILITY: S4426 - Weak key size for encryption
-function generateWeakKey() {
+function generateKeyPair() {
   return crypto.generateKeyPairSync('rsa', {
-    modulusLength: 512,  // Way too small for RSA
+    modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });
@@ -64,6 +53,5 @@ module.exports = {
   encryptStream,
   generateSessionId,
   generateApiKey,
-  generateWeakKey,
-  ENCRYPTION_KEY
+  generateKeyPair
 };

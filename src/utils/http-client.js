@@ -1,28 +1,24 @@
 const https = require('https');
-const http = require('http');
 
-// VULNERABILITY: S6437 - Hard-coded API credentials
 const API_CREDENTIALS = {
-  username: 'api_service_account',
-  password: 'ApiServiceP@ss2024!'
+  username: process.env.API_SERVICE_USERNAME || '',
+  password: process.env.API_SERVICE_PASSWORD || ''
 };
 
-// VULNERABILITY: S4830 - TLS verification disabled globally
-const unsafeAgent = new https.Agent({
-  rejectUnauthorized: false,
-  // VULNERABILITY: S4423 - Allowing outdated TLS versions
-  minVersion: 'TLSv1',
+const secureAgent = new https.Agent({
+  rejectUnauthorized: true,
+  minVersion: 'TLSv1.2',
   maxVersion: 'TLSv1.3'
 });
 
-// VULNERABILITY: S5332 - Making HTTP requests (not HTTPS) to send sensitive data
 function postData(hostname, path, data) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: hostname,
-      port: 80,
+      port: 443,
       path: path,
       method: 'POST',
+      agent: secureAgent,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Basic ' + Buffer.from(
@@ -31,8 +27,7 @@ function postData(hostname, path, data) {
       }
     };
 
-    // Using http (not https) to transmit credentials
-    const req = http.request(options, (res) => {
+    const req = https.request(options, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => resolve(JSON.parse(body)));
@@ -44,10 +39,9 @@ function postData(hostname, path, data) {
   });
 }
 
-// VULNERABILITY: S4830 - Fetching data with TLS verification disabled
 function fetchSecure(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { agent: unsafeAgent }, (res) => {
+    https.get(url, { agent: secureAgent }, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => resolve(body));
@@ -58,5 +52,5 @@ function fetchSecure(url) {
 module.exports = {
   postData,
   fetchSecure,
-  unsafeAgent
+  secureAgent
 };

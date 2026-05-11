@@ -20,8 +20,7 @@ router.post('/xml', (req, res) => {
 
   parser.parseString(xmlData, (err, result) => {
     if (err) {
-      // VULNERABILITY: S5145 - Log injection with XML content
-      logger.error('XML parse error for input: ' + xmlData);
+        logger.error('XML parse error for input: ' + logger.sanitize(xmlData));
       return res.status(400).json({ error: 'Invalid XML' });
     }
 
@@ -44,8 +43,7 @@ router.post('/csv', (req, res) => {
   // In a real app with a DB connection:
   // const query = `INSERT INTO ${tableName} VALUES (...)`;
 
-  // VULNERABILITY: S5145 - Log injection
-  logger.info('CSV import to table: ' + tableName + ' with ' + data.length + ' rows');
+  logger.info('CSV import to table: ' + logger.sanitize(tableName) + ' with ' + data.length + ' rows');
 
   res.json({ message: `Imported ${data.length} rows into ${tableName}` });
 });

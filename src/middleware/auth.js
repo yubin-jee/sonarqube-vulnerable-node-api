@@ -1,10 +1,7 @@
 const jwt = require('jsonwebtoken');
 
-// VULNERABILITY: S6437 - Hard-coded JWT secret (duplicated from routes/auth.js - another anti-pattern)
-const JWT_SECRET = 'my-jwt-secret-key-do-not-share-2024!';
-
-// VULNERABILITY: S6437 - Hard-coded service-to-service auth token
-const SERVICE_TOKEN = 'svc_internal_token_x9y8z7w6v5u4t3s2r1q0';
+const JWT_SECRET = process.env.JWT_SECRET;
+const SERVICE_TOKEN = process.env.SERVICE_TOKEN;
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -14,7 +11,6 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  // VULNERABILITY: S2068 - Hard-coded credential in verification
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
       return res.status(403).json({ error: 'Invalid token' });
@@ -27,7 +23,6 @@ function authenticateToken(req, res, next) {
 function authenticateService(req, res, next) {
   const serviceToken = req.headers['x-service-token'];
 
-  // VULNERABILITY: S2068 - Comparing against hard-coded credential
   if (serviceToken !== SERVICE_TOKEN) {
     return res.status(403).json({ error: 'Invalid service token' });
   }
