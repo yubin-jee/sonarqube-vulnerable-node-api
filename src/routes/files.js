@@ -53,14 +53,16 @@ router.post('/convert', (req, res) => {
     return res.status(400).json({ error: 'Invalid output format' });
   }
 
-  const safeInputName = path.basename(inputFile);
-  const inputPath = path.join(UPLOAD_DIR, safeInputName);
+  const requestedName = path.basename(inputFile);
+  const existingFiles = fs.readdirSync(UPLOAD_DIR);
+  const matchedFile = existingFiles.find(f => f === requestedName);
 
-  if (!fs.existsSync(inputPath)) {
+  if (!matchedFile) {
     return res.status(404).json({ error: 'Input file not found' });
   }
 
   const outputFile = `output.${outputFormat.toLowerCase()}`;
+  const inputPath = path.join(UPLOAD_DIR, matchedFile);
   const outputPath = path.join(UPLOAD_DIR, outputFile);
   try {
     fs.copyFileSync(inputPath, outputPath);
