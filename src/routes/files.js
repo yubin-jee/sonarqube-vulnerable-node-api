@@ -53,19 +53,17 @@ router.post('/convert', (req, res) => {
     return res.status(400).json({ error: 'Invalid output format' });
   }
 
-  const resolvedInput = path.resolve(UPLOAD_DIR, inputFile);
-  if (!resolvedInput.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
+  const safeInputName = path.basename(inputFile);
+  const inputPath = path.join(UPLOAD_DIR, safeInputName);
 
-  if (!fs.existsSync(resolvedInput)) {
+  if (!fs.existsSync(inputPath)) {
     return res.status(404).json({ error: 'Input file not found' });
   }
 
   const outputFile = `output.${outputFormat.toLowerCase()}`;
   const outputPath = path.join(UPLOAD_DIR, outputFile);
   try {
-    fs.copyFileSync(resolvedInput, outputPath);
+    fs.copyFileSync(inputPath, outputPath);
     res.json({ message: 'File converted successfully', output: outputFile });
   } catch (error) {
     res.status(500).json({ error: 'Conversion failed' });
