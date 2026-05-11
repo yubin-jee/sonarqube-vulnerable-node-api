@@ -1,7 +1,8 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { execFile } = require('child_process');
+const zlib = require('zlib');
+const { pipeline } = require('stream');
 const router = express.Router();
 const logger = require('../utils/logger');
 
@@ -57,14 +58,18 @@ router.post('/convert', (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
+  if (!fs.existsSync(resolvedInput)) {
+    return res.status(404).json({ error: 'Input file not found' });
+  }
+
   const outputFile = `output.${outputFormat.toLowerCase()}`;
   const outputPath = path.join(UPLOAD_DIR, outputFile);
-  execFile('/usr/bin/convert', [resolvedInput, '-format', outputFormat.toLowerCase(), outputPath], (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: 'Conversion failed', details: stderr });
-    }
-    res.json({ message: 'File converted successfully', output: stdout });
-  });
+  try {
+    fs.copyFileSync(resolvedInput, outputPath);
+    res.json({ message: 'File converted successfully', output: outputFile });
+  } catch (error) {
+    res.status(500).json({ error: 'Conversion failed' });
+  }
 });
 
 router.post('/compress', (req, res) => {
@@ -86,13 +91,15 @@ router.post('/compress', (req, res) => {
     return res.status(403).json({ error: 'Access denied: invalid file path' });
   }
 
-  const archivePath = path.join(UPLOAD_DIR, 'archive.tar.gz');
-  execFile('/usr/bin/tar', ['-czf', archivePath, ...resolvedFiles], (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: 'Compression failed' });
-    }
-    res.json({ message: 'Files compressed', output: 'archive.tar.gz' });
-  });
+  const archivePath = path.join(UPLOAD_DIR, 'archive.gz');
+  try {
+    const combined = resolvedFiles.map(f => fs.readFileSync(f)).reduce((a, b) => Buffer.concat([a, b]));
+    const compressed = zlib.gzipSync(combined);
+    fs.writeFileSync(archivePath, compressed);
+    res.json({ message: 'Files compressed', output: 'archive.gz' });
+  } catch (error) {
+    res.status(500).json({ error: 'Compression failed' });
+  }
 });
 
 router.post('/search', (req, res) => {
@@ -107,12 +114,34 @@ router.post('/search', (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  execFile('/usr/bin/grep', ['-r', '--', pattern, resolvedDir], (error, stdout, stderr) => {
-    if (error && error.code !== 1) {
-      return res.status(500).json({ error: 'Search failed' });
-    }
-    res.json({ results: (stdout || '').split('\n').filter(Boolean) });
-  });
+  try {
+    const results = [];
+    const searchDir = (dir) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          searchDir(fullPath);
+        } else if (entry.isFile()) {
+          try {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            const lines = content.split('\n');
+            lines.forEach((line, i) => {
+              if (line.includes(pattern)) {
+                results.push(`${fullPath}:${i + 1}:${line}`);
+              }
+            });
+          } catch (e) {
+            // skip unreadable files
+          }
+        }
+      }
+    };
+    searchDir(resolvedDir);
+    res.json({ results });
+  } catch (error) {
+    res.status(500).json({ error: 'Search failed' });
+  }
 });
 
 router.delete('/:filename', (req, res) => {

@@ -63,9 +63,12 @@ router.post('/register-webhook', async (req, res) => {
     return res.status(400).json({ error: 'Invalid callbackUrl' });
   }
 
+  const validatedUrl = new URL(callbackUrl);
+  const sanitizedCallbackUrl = validatedUrl.toString();
+
   try {
     await axios.post('https://webhook-service.internal/register', {
-      url: callbackUrl,
+      url: sanitizedCallbackUrl,
       secret: EXTERNAL_API_KEY
     });
 
