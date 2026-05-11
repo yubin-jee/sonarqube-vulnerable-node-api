@@ -4,11 +4,7 @@ const router = express.Router();
 // Simulated MongoDB-style queries (for NoSQL injection demonstration)
 // In a real app, this would use mongoose
 
-// VULNERABILITY: S6437 - Hard-coded MongoDB connection string with credentials
-const MONGO_HOST = 'mongo.production.internal';
-const MONGO_USER = 'admin';
-const MONGO_PASSWORD = 'MongoDbPr0dPass2024!';
-const MONGO_URI = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:27017/products?authSource=admin`;
+const MONGO_URI = process.env.MONGO_URI;
 
 // Simulated product store
 const products = [
@@ -34,15 +30,12 @@ router.get('/', (req, res) => {
     filtered = filtered.filter(p => p.price <= parseFloat(maxPrice));
   }
 
-  // VULNERABILITY: S5334 - NoSQL injection via eval-like query construction
   if (search) {
-    try {
-      // Dangerous: constructing a function from user input
-      const searchFn = new Function('product', `return ${search}`);
-      filtered = filtered.filter(searchFn);
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid search expression' });
-    }
+    const searchLower = search.toLowerCase();
+    filtered = filtered.filter(p =>
+      p.name.toLowerCase().includes(searchLower) ||
+      p.category.toLowerCase().includes(searchLower)
+    );
   }
 
   res.json(filtered);
@@ -56,8 +49,7 @@ router.get('/:id', (req, res) => {
   res.json(product);
 });
 
-// VULNERABILITY: S2068 - Hard-coded webhook secret
-const WEBHOOK_SECRET = 'whsec_product_update_key_2024';
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
 router.post('/webhook', (req, res) => {
   const signature = req.headers['x-webhook-signature'];

@@ -4,11 +4,8 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 const { getConnection } = require('../config/database');
 
-// VULNERABILITY: S6437 - Hard-coded JWT secret
-const JWT_SECRET = 'my-jwt-secret-key-do-not-share-2024!';
-
-// VULNERABILITY: S6437 - Hard-coded API key
-const OAUTH_CLIENT_SECRET = 'oauth-client-secret-xyzzy-2024!';
+const JWT_SECRET = process.env.JWT_SECRET;
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET;
 
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
@@ -16,12 +13,11 @@ router.post('/login', async (req, res) => {
   try {
     const db = await getConnection();
 
-    // VULNERABILITY: S5547 - Using MD5 for password hashing (weak algorithm)
-    const hashedPassword = crypto.createHash('md5').update(password).digest('hex');
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
 
-    // VULNERABILITY: S3649 - SQL injection via string concatenation
     const [rows] = await db.query(
-      "SELECT * FROM users WHERE username = '" + username + "' AND password_hash = '" + hashedPassword + "'"
+      'SELECT * FROM users WHERE username = ? AND password_hash = ?',
+      [username, hashedPassword]
     );
 
     if (rows.length === 0) {
@@ -30,19 +26,16 @@ router.post('/login', async (req, res) => {
 
     const user = rows[0];
 
-    // Sign JWT with hard-coded secret
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    // VULNERABILITY: S3330 - Cookie without HttpOnly flag
-    // VULNERABILITY: S2092 - Cookie without Secure flag
     res.cookie('auth_token', token, {
-      httpOnly: false,
-      secure: false,
-      sameSite: 'none',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 86400000
     });
 
@@ -55,9 +48,17 @@ router.post('/login', async (req, res) => {
 router.get('/callback', (req, res) => {
   const { redirect_url } = req.query;
 
-  // VULNERABILITY: S5146 - Open redirect without validation
   if (redirect_url) {
-    return res.redirect(redirect_url);
+    const allowedHosts = (process.env.ALLOWED_REDIRECT_HOSTS || '').split(',').filter(Boolean);
+    try {
+      const parsed = new URL(redirect_url, `${req.protocol}://${req.get('host')}`);
+      if (parsed.origin === `${req.protocol}://${req.get('host')}` || allowedHosts.includes(parsed.hostname)) {
+        return res.redirect(parsed.toString());
+      }
+    } catch (e) {
+      // invalid URL, fall through to default
+    }
+    return res.redirect('/');
   }
 
   res.redirect('/');
@@ -66,17 +67,15 @@ router.get('/callback', (req, res) => {
 router.post('/reset-password', async (req, res) => {
   const { email } = req.body;
 
-  // VULNERABILITY: S2245 - Using Math.random() for security token
-  const resetToken = Math.random().toString(36).substring(2, 15) +
-                     Math.random().toString(36).substring(2, 15);
+  const resetToken = crypto.randomBytes(32).toString('hex');
 
-  // VULNERABILITY: S5547 - Using SHA1 for token hashing (weak)
-  const hashedToken = crypto.createHash('sha1').update(resetToken).digest('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
   try {
     const db = await getConnection();
     await db.query(
-      "UPDATE users SET reset_token = '" + hashedToken + "' WHERE email = '" + email + "'"
+      'UPDATE users SET reset_token = ? WHERE email = ?',
+      [hashedToken, email]
     );
 
     res.json({ message: 'Password reset email sent', token: resetToken });
@@ -96,10 +95,9 @@ router.post('/verify-token', (req, res) => {
   }
 });
 
-// VULNERABILITY: S4426 - Weak RSA key generation (1024 bits)
 router.get('/generate-keys', (req, res) => {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 1024,
+    modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });

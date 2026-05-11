@@ -12,11 +12,14 @@ const externalRoutes = require('./routes/external');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// VULNERABILITY: S5122 - CORS misconfiguration allowing all origins
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Service-Token, X-Webhook-Signature');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   next();
 });
@@ -25,12 +28,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// VULNERABILITY: S2068 - Hard-coded session secret
 app.use(session({
-  secret: 'super-secret-session-key-12345',
+  secret: process.env.SESSION_SECRET || 'change-me-in-production',
   resave: false,
-  saveUninitialized: true,
-  cookie: { secure: false } // VULNERABILITY: S2092 - Insecure cookie
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax'
+  }
 }));
 
 app.use('/api/auth', authRoutes);
@@ -44,11 +50,10 @@ app.get('/', (req, res) => {
   res.json({ message: 'Vulnerable Node.js API - For Testing Only' });
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
-  // VULNERABILITY: S5145 - Log injection via error message
-  console.error('Error occurred: ' + err.message);
-  res.status(500).json({ error: err.message });
+  const safeMessage = String(err.message || '').replace(/[\r\n]/g, '_').replace(/[\x00-\x1f\x7f]/g, '');
+  console.error('Error occurred: ' + safeMessage);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {
