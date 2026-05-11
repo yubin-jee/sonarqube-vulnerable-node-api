@@ -42,18 +42,25 @@ router.get('/secure-data', async (req, res) => {
   }
 });
 
+const ALLOWED_WEBHOOK_DOMAINS = (process.env.ALLOWED_WEBHOOK_DOMAINS || '').split(',').filter(Boolean);
+
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
-  if (callbackUrl) {
-    try {
-      const parsed = new URL(callbackUrl);
-      if (parsed.protocol !== 'https:') {
-        return res.status(400).json({ error: 'callbackUrl must use HTTPS' });
-      }
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid callbackUrl' });
+  if (!callbackUrl) {
+    return res.status(400).json({ error: 'callbackUrl is required' });
+  }
+
+  try {
+    const parsed = new URL(callbackUrl);
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'callbackUrl must use HTTPS' });
     }
+    if (ALLOWED_WEBHOOK_DOMAINS.length > 0 && !ALLOWED_WEBHOOK_DOMAINS.includes(parsed.hostname)) {
+      return res.status(400).json({ error: 'callbackUrl domain not allowed' });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid callbackUrl' });
   }
 
   try {

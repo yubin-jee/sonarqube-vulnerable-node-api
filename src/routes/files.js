@@ -58,7 +58,8 @@ router.post('/convert', (req, res) => {
   }
 
   const outputFile = `output.${outputFormat.toLowerCase()}`;
-  execFile('convert', [resolvedInput, '-format', outputFormat.toLowerCase(), outputFile], (error, stdout, stderr) => {
+  const outputPath = path.join(UPLOAD_DIR, outputFile);
+  execFile('/usr/bin/convert', [resolvedInput, '-format', outputFormat.toLowerCase(), outputPath], (error, stdout, stderr) => {
     if (error) {
       return res.status(500).json({ error: 'Conversion failed', details: stderr });
     }
@@ -85,7 +86,8 @@ router.post('/compress', (req, res) => {
     return res.status(403).json({ error: 'Access denied: invalid file path' });
   }
 
-  execFile('tar', ['-czf', 'archive.tar.gz', ...resolvedFiles], (error, stdout, stderr) => {
+  const archivePath = path.join(UPLOAD_DIR, 'archive.tar.gz');
+  execFile('/usr/bin/tar', ['-czf', archivePath, ...resolvedFiles], (error, stdout, stderr) => {
     if (error) {
       return res.status(500).json({ error: 'Compression failed' });
     }
@@ -105,7 +107,7 @@ router.post('/search', (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  execFile('grep', ['-r', pattern, resolvedDir], (error, stdout, stderr) => {
+  execFile('/usr/bin/grep', ['-r', '--', pattern, resolvedDir], (error, stdout, stderr) => {
     if (error && error.code !== 1) {
       return res.status(500).json({ error: 'Search failed' });
     }
