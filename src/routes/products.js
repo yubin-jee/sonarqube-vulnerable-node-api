@@ -34,15 +34,12 @@ router.get('/', (req, res) => {
     filtered = filtered.filter(p => p.price <= parseFloat(maxPrice));
   }
 
-  // VULNERABILITY: S5334 - NoSQL injection via eval-like query construction
   if (search) {
-    try {
-      // Dangerous: constructing a function from user input
-      const searchFn = new Function('product', `return ${search}`);
-      filtered = filtered.filter(searchFn);
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid search expression' });
-    }
+    const searchLower = search.toLowerCase();
+    filtered = filtered.filter(p =>
+      p.name.toLowerCase().includes(searchLower) ||
+      p.category.toLowerCase().includes(searchLower)
+    );
   }
 
   res.json(filtered);
