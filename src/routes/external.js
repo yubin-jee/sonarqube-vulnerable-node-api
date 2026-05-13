@@ -4,17 +4,24 @@ const router = express.Router();
 
 const EXTERNAL_API_KEY = process.env.EXTERNAL_API_KEY || '';
 
-const ALLOWED_ENDPOINTS = new Set(['users', 'products', 'orders', 'inventory', 'status']);
+const ENDPOINT_URLS = new Map([
+  ['users', 'https://api.external-service.com/v1/users'],
+  ['products', 'https://api.external-service.com/v1/products'],
+  ['orders', 'https://api.external-service.com/v1/orders'],
+  ['inventory', 'https://api.external-service.com/v1/inventory'],
+  ['status', 'https://api.external-service.com/v1/status'],
+]);
 
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
+  const url = ENDPOINT_URLS.get(endpoint);
 
-  if (!endpoint || !ALLOWED_ENDPOINTS.has(endpoint)) {
-    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + [...ALLOWED_ENDPOINTS].join(', ') });
+  if (!url) {
+    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + [...ENDPOINT_URLS.keys()].join(', ') });
   }
 
   try {
-    const response = await axios.get(`https://api.external-service.com/v1/${endpoint}`, {
+    const response = await axios.get(url, {
       headers: {
         'Authorization': `Bearer ${EXTERNAL_API_KEY}`
       }
