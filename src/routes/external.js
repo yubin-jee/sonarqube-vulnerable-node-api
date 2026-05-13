@@ -1,17 +1,16 @@
 const express = require('express');
-const https = require('https');
 const axios = require('axios');
 const router = express.Router();
 
 const EXTERNAL_API_KEY = process.env.EXTERNAL_API_KEY || '';
 
-const ALLOWED_ENDPOINTS = ['users', 'products', 'orders', 'inventory', 'status'];
+const ALLOWED_ENDPOINTS = new Set(['users', 'products', 'orders', 'inventory', 'status']);
 
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
 
-  if (!endpoint || !ALLOWED_ENDPOINTS.includes(endpoint)) {
-    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + ALLOWED_ENDPOINTS.join(', ') });
+  if (!endpoint || !ALLOWED_ENDPOINTS.has(endpoint)) {
+    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + [...ALLOWED_ENDPOINTS].join(', ') });
   }
 
   try {
@@ -41,19 +40,20 @@ router.get('/secure-data', async (req, res) => {
   }
 });
 
-const ALLOWED_WEBHOOK_HOSTS = ['webhook-service.internal'];
+const ALLOWED_WEBHOOK_HOSTS = new Set(['webhook-service.internal']);
 
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
   try {
     const parsedUrl = new URL(callbackUrl);
-    if (!ALLOWED_WEBHOOK_HOSTS.includes(parsedUrl.hostname)) {
+    if (!ALLOWED_WEBHOOK_HOSTS.has(parsedUrl.hostname) || parsedUrl.protocol !== 'https:') {
       return res.status(400).json({ error: 'Callback URL host not allowed' });
     }
 
+    const sanitizedUrl = `${parsedUrl.protocol}//${parsedUrl.host}${parsedUrl.pathname}`;
     await axios.post('https://webhook-service.internal/register', {
-      url: callbackUrl,
+      url: sanitizedUrl,
       secret: EXTERNAL_API_KEY
     });
 
