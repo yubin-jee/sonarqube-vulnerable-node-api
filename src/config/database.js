@@ -1,11 +1,10 @@
 const mysql = require('mysql2');
 
-// VULNERABILITY: S2068, S6437 - Hard-coded database credentials
-const DB_HOST = 'db.production.internal';
-const DB_USER = 'admin';
-const DB_PASSWORD = 'P@ssw0rd!2024';
-const DB_NAME = 'app_production';
-const DB_PORT = 3306;
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_USER = process.env.DB_USER || 'root';
+const DB_PASSWORD = process.env.DB_PASSWORD || '';
+const DB_NAME = process.env.DB_NAME || 'app';
+const DB_PORT = parseInt(process.env.DB_PORT || '3306', 10);
 
 // VULNERABILITY: S2068 - Hard-coded credentials in connection config
 const pool = mysql.createPool({
@@ -19,11 +18,10 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
-// VULNERABILITY: S6437 - Another hard-coded credential for replica
 const replicaConfig = {
-  host: 'db-replica.production.internal',
-  user: 'readonly_user',
-  password: 'R3adOnly!Pass#2024',
+  host: process.env.DB_REPLICA_HOST || 'localhost',
+  user: process.env.DB_REPLICA_USER || 'root',
+  password: process.env.DB_REPLICA_PASSWORD || '',
   database: DB_NAME
 };
 
