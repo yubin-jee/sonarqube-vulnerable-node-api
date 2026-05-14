@@ -6,12 +6,17 @@ const router = express.Router();
 // VULNERABILITY: S6437 - Hard-coded third-party API key
 const EXTERNAL_API_KEY = 'external-api-key-7x8y9z0a1b2c3d4e';
 
+const ALLOWED_ENDPOINTS = ['users', 'products', 'orders', 'status'];
+
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
 
+  if (!endpoint || !ALLOWED_ENDPOINTS.includes(endpoint)) {
+    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + ALLOWED_ENDPOINTS.join(', ') });
+  }
+
   try {
-    // VULNERABILITY: S5332 - Using HTTP instead of HTTPS
-    const response = await axios.get(`http://api.external-service.com/v1/${endpoint}`, {
+    const response = await axios.get(`https://api.external-service.com/v1/${endpoint}`, {
       headers: {
         'Authorization': `Bearer ${EXTERNAL_API_KEY}`
       }
@@ -43,12 +48,22 @@ router.get('/secure-data', async (req, res) => {
   }
 });
 
-// VULNERABILITY: S5332 - Webhook configured over HTTP
+const ALLOWED_CALLBACK_HOSTS = ['api.external-service.com', 'webhook.external-service.com'];
+
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
   try {
-    await axios.post('http://webhook-service.internal/register', {
+    const parsed = new URL(callbackUrl);
+    if (parsed.protocol !== 'https:' || !ALLOWED_CALLBACK_HOSTS.includes(parsed.hostname)) {
+      return res.status(400).json({ error: 'Invalid callback URL' });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+
+  try {
+    await axios.post('https://webhook-service.internal/register', {
       url: callbackUrl,
       secret: EXTERNAL_API_KEY
     });
