@@ -1,10 +1,13 @@
 // Simple logger utility
-// VULNERABILITY: S5145 - Log injection throughout - user input is logged without sanitization
+
+function sanitize(input) {
+  if (typeof input !== 'string') return String(input);
+  return input.replace(/[\r\n\t]/g, '_').replace(/[\x00-\x1F\x7F]/g, '');
+}
 
 function formatMessage(level, message) {
   const timestamp = new Date().toISOString();
-  // No sanitization of newlines or control characters in message
-  return `[${timestamp}] [${level}] ${message}`;
+  return `[${timestamp}] [${level}] ${sanitize(message)}`;
 }
 
 function info(message) {
@@ -23,9 +26,12 @@ function debug(message) {
   console.debug(formatMessage('DEBUG', message));
 }
 
-// VULNERABILITY: S5145 - Logging HTTP requests with unsanitized user input
 function logRequest(req) {
-  const logEntry = `${req.method} ${req.url} - IP: ${req.ip} - UA: ${req.headers['user-agent']}`;
+  const method = sanitize(req.method);
+  const url = sanitize(req.url);
+  const ip = sanitize(req.ip);
+  const ua = sanitize(req.headers['user-agent'] || '');
+  const logEntry = `${method} ${url} - IP: ${ip} - UA: ${ua}`;
   info(logEntry);
 }
 
