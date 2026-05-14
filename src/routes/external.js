@@ -48,23 +48,25 @@ router.get('/secure-data', async (req, res) => {
   }
 });
 
-const ALLOWED_CALLBACK_HOSTS = ['api.external-service.com', 'webhook.external-service.com'];
+const ALLOWED_CALLBACK_HOSTS = new Set(['api.external-service.com', 'webhook.external-service.com']);
 
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
   try {
     const parsed = new URL(callbackUrl);
-    if (parsed.protocol !== 'https:' || !ALLOWED_CALLBACK_HOSTS.includes(parsed.hostname)) {
+    if (parsed.protocol !== 'https:' || !ALLOWED_CALLBACK_HOSTS.has(parsed.hostname)) {
       return res.status(400).json({ error: 'Invalid callback URL' });
     }
-  } catch (e) {
+  } catch (urlError) {
     return res.status(400).json({ error: 'Invalid URL format' });
   }
 
+  const validatedUrl = `https://${[...ALLOWED_CALLBACK_HOSTS].find(h => new URL(callbackUrl).hostname === h)}${new URL(callbackUrl).pathname}`;
+
   try {
     await axios.post('https://webhook-service.internal/register', {
-      url: callbackUrl,
+      url: validatedUrl,
       secret: EXTERNAL_API_KEY
     });
 
