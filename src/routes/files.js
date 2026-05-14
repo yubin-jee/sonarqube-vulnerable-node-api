@@ -7,6 +7,8 @@ const logger = require('../utils/logger');
 
 const UPLOAD_DIR = path.resolve(path.join(__dirname, '../../uploads'));
 
+const ALLOWED_FORMATS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf', 'webp'];
+
 function isWithinDirectory(filePath, directory) {
   const resolvedPath = path.resolve(filePath);
   return resolvedPath.startsWith(directory + path.sep) || resolvedPath === directory;
@@ -55,9 +57,19 @@ router.post('/convert', (req, res) => {
 
   const safeInput = sanitizeFilename(inputFile);
   const safeFormat = String(outputFormat).replace(/[^a-zA-Z0-9]/g, '');
+
+  if (!ALLOWED_FORMATS.includes(safeFormat.toLowerCase())) {
+    return res.status(400).json({ error: 'Unsupported output format' });
+  }
+
+  const inputPath = path.resolve(path.join(UPLOAD_DIR, safeInput));
+  if (!isWithinDirectory(inputPath, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
   const outputName = `output.${safeFormat}`;
 
-  execFile('convert', [safeInput, '-format', safeFormat, outputName], (error, stdout, stderr) => {
+  execFile('/usr/bin/convert', [inputPath, '-format', safeFormat, path.join(UPLOAD_DIR, outputName)], (error, stdout, stderr) => {
     if (error) {
       return res.status(500).json({ error: 'Conversion failed', details: stderr });
     }
@@ -72,9 +84,21 @@ router.post('/compress', (req, res) => {
     return res.status(400).json({ error: 'Files array is required' });
   }
 
-  const safeFiles = files.map(f => sanitizeFilename(f));
+  const safeFiles = files.map(f => {
+    const safe = sanitizeFilename(f);
+    const fullPath = path.resolve(path.join(UPLOAD_DIR, safe));
+    if (!isWithinDirectory(fullPath, UPLOAD_DIR)) {
+      return null;
+    }
+    return fullPath;
+  }).filter(Boolean);
 
-  execFile('tar', ['-czf', 'archive.tar.gz', ...safeFiles], (error, stdout, stderr) => {
+  if (safeFiles.length === 0) {
+    return res.status(400).json({ error: 'No valid files to compress' });
+  }
+
+  const archivePath = path.join(UPLOAD_DIR, 'archive.tar.gz');
+  execFile('/usr/bin/tar', ['-czf', archivePath, ...safeFiles], (error, stdout, stderr) => {
     if (error) {
       return res.status(500).json({ error: 'Compression failed' });
     }
@@ -90,7 +114,9 @@ router.post('/search', (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  execFile('grep', ['-r', pattern, safeDir], (error, stdout, stderr) => {
+  const safePattern = String(pattern).substring(0, 200);
+
+  execFile('/usr/bin/grep', ['-r', '-l', '--', safePattern, safeDir], (error, stdout, stderr) => {
     if (error && error.code !== 1) {
       return res.status(500).json({ error: 'Search failed' });
     }
