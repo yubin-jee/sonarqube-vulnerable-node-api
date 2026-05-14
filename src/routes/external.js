@@ -6,17 +6,23 @@ const router = express.Router();
 // VULNERABILITY: S6437 - Hard-coded third-party API key
 const EXTERNAL_API_KEY = 'external-api-key-7x8y9z0a1b2c3d4e';
 
-const ALLOWED_ENDPOINTS = new Set(['users', 'products', 'orders', 'status']);
+const ENDPOINT_URLS = {
+  users: 'https://api.external-service.com/v1/users',
+  products: 'https://api.external-service.com/v1/products',
+  orders: 'https://api.external-service.com/v1/orders',
+  status: 'https://api.external-service.com/v1/status'
+};
 
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
 
-  if (!endpoint || !ALLOWED_ENDPOINTS.has(endpoint)) {
-    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + [...ALLOWED_ENDPOINTS].join(', ') });
+  const targetUrl = ENDPOINT_URLS[endpoint];
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + Object.keys(ENDPOINT_URLS).join(', ') });
   }
 
   try {
-    const response = await axios.get(`https://api.external-service.com/v1/${endpoint}`, {
+    const response = await axios.get(targetUrl, {
       headers: {
         'Authorization': `Bearer ${EXTERNAL_API_KEY}`
       }
