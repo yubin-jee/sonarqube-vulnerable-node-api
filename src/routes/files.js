@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 
 const UPLOAD_DIR = path.resolve(path.join(__dirname, '../../uploads'));
 
-const ALLOWED_FORMATS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf', 'webp'];
+const ALLOWED_FORMATS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf', 'webp']);
 
 function isWithinDirectory(filePath, directory) {
   const resolvedPath = path.resolve(filePath);
@@ -58,7 +58,7 @@ router.post('/convert', (req, res) => {
   const safeInput = sanitizeFilename(inputFile);
   const safeFormat = String(outputFormat).replace(/[^a-zA-Z0-9]/g, '');
 
-  if (!ALLOWED_FORMATS.includes(safeFormat.toLowerCase())) {
+  if (!ALLOWED_FORMATS.has(safeFormat.toLowerCase())) {
     return res.status(400).json({ error: 'Unsupported output format' });
   }
 
@@ -69,9 +69,10 @@ router.post('/convert', (req, res) => {
 
   const outputName = `output.${safeFormat}`;
 
-  execFile('/usr/bin/convert', [inputPath, '-format', safeFormat, path.join(UPLOAD_DIR, outputName)], (error, stdout, stderr) => {
+  const args = [inputPath, '-format', safeFormat, path.join(UPLOAD_DIR, outputName)];
+  execFile('/usr/bin/convert', args, { timeout: 30000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
     if (error) {
-      return res.status(500).json({ error: 'Conversion failed', details: stderr });
+      return res.status(500).json({ error: 'Conversion failed' });
     }
     res.json({ message: 'File converted successfully', output: stdout });
   });
@@ -114,9 +115,13 @@ router.post('/search', (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  const safePattern = String(pattern).substring(0, 200);
+  const safePattern = String(pattern).substring(0, 200).replace(/[\x00-\x1F\x7F]/g, '');
+  if (!safePattern) {
+    return res.status(400).json({ error: 'Invalid search pattern' });
+  }
 
-  execFile('/usr/bin/grep', ['-r', '-l', '--', safePattern, safeDir], (error, stdout, stderr) => {
+  const args = ['-r', '-l', '--', safePattern, safeDir];
+  execFile('/usr/bin/grep', args, { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
     if (error && error.code !== 1) {
       return res.status(500).json({ error: 'Search failed' });
     }
