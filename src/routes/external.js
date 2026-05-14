@@ -6,12 +6,23 @@ const router = express.Router();
 // VULNERABILITY: S6437 - Hard-coded third-party API key
 const EXTERNAL_API_KEY = 'external-api-key-7x8y9z0a1b2c3d4e';
 
+const ENDPOINT_URLS = {
+  users: 'https://api.external-service.com/v1/users',
+  products: 'https://api.external-service.com/v1/products',
+  orders: 'https://api.external-service.com/v1/orders',
+  status: 'https://api.external-service.com/v1/status'
+};
+
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
 
+  const targetUrl = ENDPOINT_URLS[endpoint];
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + Object.keys(ENDPOINT_URLS).join(', ') });
+  }
+
   try {
-    // VULNERABILITY: S5332 - Using HTTP instead of HTTPS
-    const response = await axios.get(`http://api.external-service.com/v1/${endpoint}`, {
+    const response = await axios.get(targetUrl, {
       headers: {
         'Authorization': `Bearer ${EXTERNAL_API_KEY}`
       }
@@ -43,13 +54,32 @@ router.get('/secure-data', async (req, res) => {
   }
 });
 
-// VULNERABILITY: S5332 - Webhook configured over HTTP
+const ALLOWED_CALLBACK_HOSTS = new Set(['api.external-service.com', 'webhook.external-service.com']);
+
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
+  let validatedHost;
+  let validatedPath;
   try {
-    await axios.post('http://webhook-service.internal/register', {
-      url: callbackUrl,
+    const parsed = new URL(callbackUrl);
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Invalid callback URL: must use HTTPS' });
+    }
+    if (!ALLOWED_CALLBACK_HOSTS.has(parsed.hostname)) {
+      return res.status(400).json({ error: 'Invalid callback URL: host not allowed' });
+    }
+    validatedHost = parsed.hostname;
+    validatedPath = parsed.pathname;
+  } catch (urlError) {
+    return res.status(400).json({ error: 'Invalid URL format: ' + urlError.message });
+  }
+
+  const registrationUrl = `https://${validatedHost}${validatedPath}`;
+
+  try {
+    await axios.post('https://webhook-service.internal/register', {
+      url: registrationUrl,
       secret: EXTERNAL_API_KEY
     });
 
