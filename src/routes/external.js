@@ -6,13 +6,13 @@ const router = express.Router();
 // VULNERABILITY: S6437 - Hard-coded third-party API key
 const EXTERNAL_API_KEY = 'external-api-key-7x8y9z0a1b2c3d4e';
 
-const ALLOWED_ENDPOINTS = ['users', 'products', 'orders', 'status'];
+const ALLOWED_ENDPOINTS = new Set(['users', 'products', 'orders', 'status']);
 
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
 
-  if (!endpoint || !ALLOWED_ENDPOINTS.includes(endpoint)) {
-    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + ALLOWED_ENDPOINTS.join(', ') });
+  if (!endpoint || !ALLOWED_ENDPOINTS.has(endpoint)) {
+    return res.status(400).json({ error: 'Invalid endpoint. Allowed: ' + [...ALLOWED_ENDPOINTS].join(', ') });
   }
 
   try {
@@ -53,20 +53,27 @@ const ALLOWED_CALLBACK_HOSTS = new Set(['api.external-service.com', 'webhook.ext
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
+  let validatedHost;
+  let validatedPath;
   try {
     const parsed = new URL(callbackUrl);
-    if (parsed.protocol !== 'https:' || !ALLOWED_CALLBACK_HOSTS.has(parsed.hostname)) {
-      return res.status(400).json({ error: 'Invalid callback URL' });
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Invalid callback URL: must use HTTPS' });
     }
+    if (!ALLOWED_CALLBACK_HOSTS.has(parsed.hostname)) {
+      return res.status(400).json({ error: 'Invalid callback URL: host not allowed' });
+    }
+    validatedHost = parsed.hostname;
+    validatedPath = parsed.pathname;
   } catch (urlError) {
-    return res.status(400).json({ error: 'Invalid URL format' });
+    return res.status(400).json({ error: 'Invalid URL format: ' + urlError.message });
   }
 
-  const validatedUrl = `https://${[...ALLOWED_CALLBACK_HOSTS].find(h => new URL(callbackUrl).hostname === h)}${new URL(callbackUrl).pathname}`;
+  const registrationUrl = `https://${validatedHost}${validatedPath}`;
 
   try {
     await axios.post('https://webhook-service.internal/register', {
-      url: validatedUrl,
+      url: registrationUrl,
       secret: EXTERNAL_API_KEY
     });
 
