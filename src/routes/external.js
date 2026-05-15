@@ -1,17 +1,38 @@
 const express = require('express');
 const https = require('https');
 const axios = require('axios');
+const url = require('url');
 const router = express.Router();
 
-// VULNERABILITY: S6437 - Hard-coded third-party API key
-const EXTERNAL_API_KEY = 'external-api-key-7x8y9z0a1b2c3d4e';
+const EXTERNAL_API_KEY = process.env.EXTERNAL_API_KEY || '';
+
+const ALLOWED_ENDPOINTS = /^[a-zA-Z0-9/_-]+$/;
+
+const BLOCKED_HOSTS = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\./,
+  /^localhost$/i,
+  /^::1$/,
+  /^\[::1\]$/,
+];
+
+function isBlockedHost(hostname) {
+  return BLOCKED_HOSTS.some(pattern => pattern.test(hostname));
+}
 
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
 
+  if (!endpoint || !ALLOWED_ENDPOINTS.test(endpoint)) {
+    return res.status(400).json({ error: 'Invalid endpoint parameter' });
+  }
+
   try {
-    // VULNERABILITY: S5332 - Using HTTP instead of HTTPS
-    const response = await axios.get(`http://api.external-service.com/v1/${endpoint}`, {
+    const response = await axios.get(`https://api.external-service.com/v1/${endpoint}`, {
       headers: {
         'Authorization': `Bearer ${EXTERNAL_API_KEY}`
       }
@@ -25,13 +46,7 @@ router.get('/data', async (req, res) => {
 
 router.get('/secure-data', async (req, res) => {
   try {
-    // VULNERABILITY: S4830 - Disabling TLS certificate verification
-    const agent = new https.Agent({
-      rejectUnauthorized: false
-    });
-
     const response = await axios.get('https://internal-api.company.com/data', {
-      httpsAgent: agent,
       headers: {
         'X-API-Key': EXTERNAL_API_KEY
       }
@@ -43,18 +58,34 @@ router.get('/secure-data', async (req, res) => {
   }
 });
 
-// VULNERABILITY: S5332 - Webhook configured over HTTP
 router.post('/register-webhook', async (req, res) => {
   const { callbackUrl } = req.body;
 
+  if (!callbackUrl) {
+    return res.status(400).json({ error: 'callbackUrl is required' });
+  }
+
   try {
-    await axios.post('http://webhook-service.internal/register', {
+    const parsed = new URL(callbackUrl);
+
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Only HTTPS callback URLs are allowed' });
+    }
+
+    if (isBlockedHost(parsed.hostname)) {
+      return res.status(400).json({ error: 'Internal/private hosts are not allowed' });
+    }
+
+    await axios.post('https://webhook-service.internal/register', {
       url: callbackUrl,
       secret: EXTERNAL_API_KEY
     });
 
     res.json({ message: 'Webhook registered' });
   } catch (error) {
+    if (error.message && error.message.includes('Invalid URL')) {
+      return res.status(400).json({ error: 'Invalid callback URL' });
+    }
     res.status(500).json({ error: 'Failed to register webhook' });
   }
 });
