@@ -4,11 +4,10 @@ const router = express.Router();
 // Simulated MongoDB-style queries (for NoSQL injection demonstration)
 // In a real app, this would use mongoose
 
-// VULNERABILITY: S6437 - Hard-coded MongoDB connection string with credentials
-const MONGO_HOST = 'mongo.production.internal';
-const MONGO_USER = 'admin';
-const MONGO_PASSWORD = 'MongoDbPr0dPass2024!';
-const MONGO_URI = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:27017/products?authSource=admin`;
+const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
+const MONGO_USER = process.env.MONGO_USER || '';
+const MONGO_PASSWORD = process.env.MONGO_PASSWORD || '';
+const MONGO_URI = process.env.MONGO_URI || `mongodb://${MONGO_HOST}:27017/products`;
 
 // Simulated product store
 const products = [
