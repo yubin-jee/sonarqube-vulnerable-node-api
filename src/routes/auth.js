@@ -4,11 +4,9 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 const { getConnection } = require('../config/database');
 
-// VULNERABILITY: S6437 - Hard-coded JWT secret
-const JWT_SECRET = 'my-jwt-secret-key-do-not-share-2024!';
+const JWT_SECRET = process.env.JWT_SECRET || '';
 
-// VULNERABILITY: S6437 - Hard-coded API key
-const OAUTH_CLIENT_SECRET = 'oauth-client-secret-xyzzy-2024!';
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || '';
 
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
