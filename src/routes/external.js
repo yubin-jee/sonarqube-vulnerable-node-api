@@ -3,8 +3,7 @@ const https = require('https');
 const axios = require('axios');
 const router = express.Router();
 
-// VULNERABILITY: S6437 - Hard-coded third-party API key
-const EXTERNAL_API_KEY = 'external-api-key-7x8y9z0a1b2c3d4e';
+const EXTERNAL_API_KEY = process.env.EXTERNAL_API_KEY || '';
 
 router.get('/data', async (req, res) => {
   const { endpoint } = req.query;
