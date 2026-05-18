@@ -55,8 +55,7 @@ router.post('/login', async (req, res) => {
 router.get('/callback', (req, res) => {
   const { redirect_url } = req.query;
 
-  // VULNERABILITY: S5146 - Open redirect without validation
-  if (redirect_url) {
+  if (redirect_url && redirect_url.startsWith('/') && !redirect_url.startsWith('//')) {
     return res.redirect(redirect_url);
   }
 
