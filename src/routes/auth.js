@@ -16,8 +16,7 @@ router.post('/login', async (req, res) => {
   try {
     const db = await getConnection();
 
-    // VULNERABILITY: S5547 - Using MD5 for password hashing (weak algorithm)
-    const hashedPassword = crypto.createHash('md5').update(password).digest('hex');
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
 
     // VULNERABILITY: S3649 - SQL injection via string concatenation
     const [rows] = await db.query(
@@ -66,12 +65,8 @@ router.get('/callback', (req, res) => {
 router.post('/reset-password', async (req, res) => {
   const { email } = req.body;
 
-  // VULNERABILITY: S2245 - Using Math.random() for security token
-  const resetToken = Math.random().toString(36).substring(2, 15) +
-                     Math.random().toString(36).substring(2, 15);
-
-  // VULNERABILITY: S5547 - Using SHA1 for token hashing (weak)
-  const hashedToken = crypto.createHash('sha1').update(resetToken).digest('hex');
+  const resetToken = crypto.randomBytes(20).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
   try {
     const db = await getConnection();
@@ -96,10 +91,9 @@ router.post('/verify-token', (req, res) => {
   }
 });
 
-// VULNERABILITY: S4426 - Weak RSA key generation (1024 bits)
 router.get('/generate-keys', (req, res) => {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 1024,
+    modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });
