@@ -55,9 +55,16 @@ router.post('/login', async (req, res) => {
 router.get('/callback', (req, res) => {
   const { redirect_url } = req.query;
 
-  // VULNERABILITY: S5146 - Open redirect without validation
   if (redirect_url) {
-    return res.redirect(redirect_url);
+    try {
+      const url = new URL(redirect_url, `${req.protocol}://${req.get('host')}`);
+      if (url.origin !== `${req.protocol}://${req.get('host')}`) {
+        return res.status(400).json({ error: 'External redirects are not allowed' });
+      }
+      return res.redirect(url.pathname + url.search);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid redirect URL' });
+    }
   }
 
   res.redirect('/');
