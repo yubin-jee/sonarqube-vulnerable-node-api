@@ -1,10 +1,9 @@
 const https = require('https');
 const http = require('http');
 
-// VULNERABILITY: S6437 - Hard-coded API credentials
 const API_CREDENTIALS = {
-  username: 'api_service_account',
-  password: 'ApiServiceP@ss2024!'
+  username: process.env.API_SERVICE_USERNAME || '',
+  password: process.env.API_SERVICE_PASSWORD || ''
 };
 
 // VULNERABILITY: S4830 - TLS verification disabled globally
