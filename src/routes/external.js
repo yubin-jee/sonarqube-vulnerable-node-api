@@ -53,12 +53,18 @@ router.post('/register-webhook', async (req, res) => {
       return res.status(400).json({ error: 'Callback URL must use HTTPS' });
     }
 
-    if (ALLOWED_CALLBACK_HOSTS.length > 0 && !ALLOWED_CALLBACK_HOSTS.includes(parsed.hostname)) {
+    if (ALLOWED_CALLBACK_HOSTS.length === 0) {
+      return res.status(400).json({ error: 'No allowed callback hosts configured' });
+    }
+
+    if (!ALLOWED_CALLBACK_HOSTS.includes(parsed.hostname)) {
       return res.status(400).json({ error: 'Callback host not allowed' });
     }
 
+    const sanitizedUrl = `https://${parsed.hostname}${parsed.pathname}`;
+
     await axios.post('https://webhook-service.internal/register', {
-      url: callbackUrl,
+      url: sanitizedUrl,
       secret: EXTERNAL_API_KEY
     });
 
