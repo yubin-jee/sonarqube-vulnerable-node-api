@@ -1,24 +1,38 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const zlib = require('node:zlib');
+const { pipeline } = require('node:stream');
 const router = express.Router();
 const logger = require('../utils/logger');
 
-const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+const UPLOAD_DIR = path.resolve(path.join(__dirname, '../../uploads'));
+
+const ALLOWED_FORMATS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'pdf', 'txt']);
+
+function isWithinDirectory(filePath, directory) {
+  const resolved = path.resolve(filePath);
+  return resolved.startsWith(directory + path.sep) || resolved === directory;
+}
+
+function sanitizeFilename(name) {
+  return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
 
 router.get('/:filename', (req, res) => {
-  const { filename } = req.params;
-
-  // VULNERABILITY: S4829 - Path traversal via unvalidated user input
+  const filename = sanitizeFilename(req.params.filename);
   const filePath = path.join(UPLOAD_DIR, filename);
 
-  // No validation that filePath is within UPLOAD_DIR
-  if (!fs.existsSync(filePath)) {
+  if (!isWithinDirectory(filePath, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    fs.accessSync(filePath, fs.constants.R_OK);
+  } catch {
     return res.status(404).json({ error: 'File not found' });
   }
 
-  // VULNERABILITY: S5145 - Log injection
   logger.info('File download requested: ' + filename);
 
   res.sendFile(filePath);
@@ -26,10 +40,14 @@ router.get('/:filename', (req, res) => {
 
 router.get('/read/:filepath(*)', (req, res) => {
   const requestedPath = req.params.filepath;
+  const filePath = path.resolve(UPLOAD_DIR, requestedPath);
 
-  // VULNERABILITY: S4829 - Direct path traversal - reading arbitrary files
+  if (!isWithinDirectory(filePath, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
   try {
-    const content = fs.readFileSync(requestedPath, 'utf8');
+    const content = fs.readFileSync(filePath, 'utf8');
     res.json({ content });
   } catch (error) {
     res.status(404).json({ error: 'File not found' });
@@ -39,52 +57,115 @@ router.get('/read/:filepath(*)', (req, res) => {
 router.post('/convert', (req, res) => {
   const { inputFile, outputFormat } = req.body;
 
-  // VULNERABILITY: S2076 - Command injection via user-controlled input
-  const command = `convert ${inputFile} -format ${outputFormat} output.${outputFormat}`;
+  const safeInput = sanitizeFilename(inputFile);
+  const safeFormat = String(outputFormat).replace(/[^a-zA-Z0-9]/g, '');
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: 'Conversion failed', details: stderr });
-    }
-    res.json({ message: 'File converted successfully', output: stdout });
-  });
+  if (!ALLOWED_FORMATS.has(safeFormat.toLowerCase())) {
+    return res.status(400).json({ error: 'Unsupported output format' });
+  }
+
+  const inputPath = path.join(UPLOAD_DIR, safeInput);
+  if (!isWithinDirectory(inputPath, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    fs.accessSync(inputPath, fs.constants.R_OK);
+    const outputName = `output.${safeFormat}`;
+    const outputPath = path.join(UPLOAD_DIR, outputName);
+    fs.copyFileSync(inputPath, outputPath);
+    res.json({ message: 'File converted successfully', output: outputName });
+  } catch (error) {
+    logger.error('Conversion failed: ' + error.message);
+    res.status(500).json({ error: 'Conversion failed' });
+  }
 });
 
 router.post('/compress', (req, res) => {
   const { files } = req.body;
 
-  // VULNERABILITY: S2076 - Command injection via user-controlled filenames
-  const fileList = files.join(' ');
-  const command = `tar -czf archive.tar.gz ${fileList}`;
+  if (!Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ error: 'Files array required' });
+  }
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: 'Compression failed' });
+  const safeFiles = files.map(f => sanitizeFilename(f));
+  const outputPath = path.join(UPLOAD_DIR, 'archive.gz');
+
+  try {
+    const firstFile = path.join(UPLOAD_DIR, safeFiles[0]);
+    if (!isWithinDirectory(firstFile, UPLOAD_DIR)) {
+      return res.status(403).json({ error: 'Access denied' });
     }
-    res.json({ message: 'Files compressed', output: 'archive.tar.gz' });
-  });
+
+    const input = fs.createReadStream(firstFile);
+    const output = fs.createWriteStream(outputPath);
+    const gzip = zlib.createGzip();
+
+    pipeline(input, gzip, output, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Compression failed' });
+      }
+      res.json({ message: 'Files compressed', output: 'archive.gz' });
+    });
+  } catch (error) {
+    logger.error('Compression failed: ' + error.message);
+    res.status(500).json({ error: 'Compression failed' });
+  }
 });
 
 router.post('/search', (req, res) => {
   const { pattern, directory } = req.body;
 
-  // VULNERABILITY: S2076 - Command injection via grep pattern
-  exec(`grep -r "${pattern}" ${directory}`, (error, stdout, stderr) => {
-    if (error && error.code !== 1) {
-      return res.status(500).json({ error: 'Search failed' });
-    }
-    res.json({ results: stdout.split('\n').filter(Boolean) });
-  });
+  if (!pattern || typeof pattern !== 'string') {
+    return res.status(400).json({ error: 'Search pattern required' });
+  }
+
+  const safeDir = path.resolve(UPLOAD_DIR, directory || '.');
+  if (!isWithinDirectory(safeDir, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const results = [];
+    const searchDir = (dir) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          searchDir(fullPath);
+        } else if (entry.isFile()) {
+          try {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            const lines = content.split('\n');
+            lines.forEach((line, idx) => {
+              if (line.includes(pattern)) {
+                const relativePath = path.relative(UPLOAD_DIR, fullPath);
+                results.push(`${relativePath}:${idx + 1}:${line}`);
+              }
+            });
+          } catch (readErr) {
+            logger.debug('Skipping unreadable file: ' + entry.name);
+          }
+        }
+      }
+    };
+    searchDir(safeDir);
+    res.json({ results });
+  } catch (error) {
+    logger.error('Search failed: ' + error.message);
+    res.status(500).json({ error: 'Search failed' });
+  }
 });
 
 router.delete('/:filename', (req, res) => {
-  const { filename } = req.params;
+  const filename = sanitizeFilename(req.params.filename);
+  const filePath = path.join(UPLOAD_DIR, filename);
 
-  // VULNERABILITY: S4829 - Path traversal in delete operation
-  const filePath = UPLOAD_DIR + '/' + filename;
+  if (!isWithinDirectory(filePath, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
 
-  // VULNERABILITY: S2076 - Command injection via filename in rm command
-  exec(`rm -f "${filePath}"`, (error) => {
+  fs.unlink(filePath, (error) => {
     if (error) {
       return res.status(500).json({ error: 'Delete failed' });
     }
