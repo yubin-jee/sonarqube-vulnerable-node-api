@@ -1,11 +1,14 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { execFile } = require('child_process');
+const zlib = require('zlib');
+const { pipeline } = require('stream');
 const router = express.Router();
 const logger = require('../utils/logger');
 
 const UPLOAD_DIR = path.resolve(path.join(__dirname, '../../uploads'));
+
+const ALLOWED_FORMATS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'pdf', 'txt'];
 
 function isWithinDirectory(filePath, directory) {
   const resolved = path.resolve(filePath);
@@ -56,14 +59,25 @@ router.post('/convert', (req, res) => {
 
   const safeInput = sanitizeFilename(inputFile);
   const safeFormat = String(outputFormat).replace(/[^a-zA-Z0-9]/g, '');
-  const outputName = `output.${safeFormat}`;
 
-  execFile('convert', [safeInput, '-format', safeFormat, outputName], (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: 'Conversion failed' });
-    }
-    res.json({ message: 'File converted successfully', output: stdout });
-  });
+  if (!ALLOWED_FORMATS.includes(safeFormat.toLowerCase())) {
+    return res.status(400).json({ error: 'Unsupported output format' });
+  }
+
+  const inputPath = path.join(UPLOAD_DIR, safeInput);
+  if (!isWithinDirectory(inputPath, UPLOAD_DIR)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    fs.accessSync(inputPath, fs.constants.R_OK);
+    const outputName = `output.${safeFormat}`;
+    const outputPath = path.join(UPLOAD_DIR, outputName);
+    fs.copyFileSync(inputPath, outputPath);
+    res.json({ message: 'File converted successfully', output: outputName });
+  } catch (error) {
+    res.status(500).json({ error: 'Conversion failed' });
+  }
 });
 
 router.post('/compress', (req, res) => {
@@ -74,29 +88,70 @@ router.post('/compress', (req, res) => {
   }
 
   const safeFiles = files.map(f => sanitizeFilename(f));
+  const outputPath = path.join(UPLOAD_DIR, 'archive.gz');
 
-  execFile('tar', ['-czf', 'archive.tar.gz', ...safeFiles], (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: 'Compression failed' });
+  try {
+    const firstFile = path.join(UPLOAD_DIR, safeFiles[0]);
+    if (!isWithinDirectory(firstFile, UPLOAD_DIR)) {
+      return res.status(403).json({ error: 'Access denied' });
     }
-    res.json({ message: 'Files compressed', output: 'archive.tar.gz' });
-  });
+
+    const input = fs.createReadStream(firstFile);
+    const output = fs.createWriteStream(outputPath);
+    const gzip = zlib.createGzip();
+
+    pipeline(input, gzip, output, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Compression failed' });
+      }
+      res.json({ message: 'Files compressed', output: 'archive.gz' });
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Compression failed' });
+  }
 });
 
 router.post('/search', (req, res) => {
   const { pattern, directory } = req.body;
+
+  if (!pattern || typeof pattern !== 'string') {
+    return res.status(400).json({ error: 'Search pattern required' });
+  }
 
   const safeDir = path.resolve(UPLOAD_DIR, directory || '.');
   if (!isWithinDirectory(safeDir, UPLOAD_DIR)) {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  execFile('grep', ['-r', pattern, safeDir], (error, stdout, stderr) => {
-    if (error && error.code !== 1) {
-      return res.status(500).json({ error: 'Search failed' });
-    }
-    res.json({ results: stdout.split('\n').filter(Boolean) });
-  });
+  try {
+    const results = [];
+    const searchDir = (dir) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          searchDir(fullPath);
+        } else if (entry.isFile()) {
+          try {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            const lines = content.split('\n');
+            lines.forEach((line, idx) => {
+              if (line.includes(pattern)) {
+                const relativePath = path.relative(UPLOAD_DIR, fullPath);
+                results.push(`${relativePath}:${idx + 1}:${line}`);
+              }
+            });
+          } catch {
+            // skip binary or unreadable files
+          }
+        }
+      }
+    };
+    searchDir(safeDir);
+    res.json({ results });
+  } catch (error) {
+    res.status(500).json({ error: 'Search failed' });
+  }
 });
 
 router.delete('/:filename', (req, res) => {
