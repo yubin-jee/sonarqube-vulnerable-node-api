@@ -1,9 +1,6 @@
-// VULNERABILITY: S2068 - Hard-coded test credentials
-// These should still be flagged but fixed separately from production code
-
-const TEST_DB_PASSWORD = 'test_password_123';
-const TEST_API_KEY = 'test-api-key-abcdef123456';
-const TEST_JWT_SECRET = 'test-jwt-secret-for-unit-tests';
+const TEST_DB_PASSWORD = process.env.TEST_DB_PASSWORD || '';
+const TEST_API_KEY = process.env.TEST_API_KEY || '';
+const TEST_JWT_SECRET = process.env.TEST_JWT_SECRET || '';
 
 describe('Auth Routes', () => {
   test('should login with valid credentials', async () => {
