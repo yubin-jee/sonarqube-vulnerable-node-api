@@ -1,14 +1,14 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const zlib = require('zlib');
-const { pipeline } = require('stream');
+const zlib = require('node:zlib');
+const { pipeline } = require('node:stream');
 const router = express.Router();
 const logger = require('../utils/logger');
 
 const UPLOAD_DIR = path.resolve(path.join(__dirname, '../../uploads'));
 
-const ALLOWED_FORMATS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'pdf', 'txt'];
+const ALLOWED_FORMATS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'pdf', 'txt']);
 
 function isWithinDirectory(filePath, directory) {
   const resolved = path.resolve(filePath);
@@ -60,7 +60,7 @@ router.post('/convert', (req, res) => {
   const safeInput = sanitizeFilename(inputFile);
   const safeFormat = String(outputFormat).replace(/[^a-zA-Z0-9]/g, '');
 
-  if (!ALLOWED_FORMATS.includes(safeFormat.toLowerCase())) {
+  if (!ALLOWED_FORMATS.has(safeFormat.toLowerCase())) {
     return res.status(400).json({ error: 'Unsupported output format' });
   }
 
@@ -76,6 +76,7 @@ router.post('/convert', (req, res) => {
     fs.copyFileSync(inputPath, outputPath);
     res.json({ message: 'File converted successfully', output: outputName });
   } catch (error) {
+    logger.error('Conversion failed: ' + error.message);
     res.status(500).json({ error: 'Conversion failed' });
   }
 });
@@ -107,6 +108,7 @@ router.post('/compress', (req, res) => {
       res.json({ message: 'Files compressed', output: 'archive.gz' });
     });
   } catch (error) {
+    logger.error('Compression failed: ' + error.message);
     res.status(500).json({ error: 'Compression failed' });
   }
 });
@@ -141,8 +143,8 @@ router.post('/search', (req, res) => {
                 results.push(`${relativePath}:${idx + 1}:${line}`);
               }
             });
-          } catch {
-            // skip binary or unreadable files
+          } catch (readErr) {
+            logger.debug('Skipping unreadable file: ' + entry.name);
           }
         }
       }
@@ -150,6 +152,7 @@ router.post('/search', (req, res) => {
     searchDir(safeDir);
     res.json({ results });
   } catch (error) {
+    logger.error('Search failed: ' + error.message);
     res.status(500).json({ error: 'Search failed' });
   }
 });
